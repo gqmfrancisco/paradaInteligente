@@ -1,164 +1,279 @@
-import time
-import csv
-import io
-import json
-import os
+
+from flask import Flask, jsonify, render_template, request
+import serial
 import threading
-from pathlib import Path
+import time
 
-
-import redis
-import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.responses import Response
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-
-from leitor_serial import ler_temperatura
 from historico import (
     inicializar_banco,
     salvar_leitura,
-    obter_historico,
-    obter_todas_leituras
+    obter_historico
 )
 
-BASE_DIR = Path(__file__).resolve().parent
+app = Flask(__name__)
 
-CHAVE_CACHE = "furacao:ultima_leitura"
-TEMPO_CACHE = 5  # segundos (o dashboard consulta a cada 3 s)
+PORTA = "/dev/ttyACM0"
+BAUDRATE = 9600
+LIMITE_UMIDADE = 58
 
-app = FastAPI(title="Furação 2000 - Monitoramento de Temperatura")
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
+arduino = None
 
-# Conexão com o Redis (cache distribuído)
-cache = redis.Redis(
-    host=os.getenv("REDIS_HOST", "localhost"),
-    port=int(os.getenv("REDIS_PORT", "6379")),
-    decode_responses=True,
-    socket_connect_timeout=0.3,
-    socket_timeout=0.3,
-)
+lock = threading.Lock()
+lock_serial = threading.Lock()
 
-# Se o Redis falhar, não tenta de novo por alguns segundos
-redis_pausado_ate = 0
-
-# Evita que duas requisições leiam a porta serial ao mesmo tempo
-trava_sensor = threading.Lock()
-
-# Inicializa o banco de dados
-inicializar_banco()
+dados = {
+    "umidade": None,
+    "presenca": "AGUARDANDO",
+    "led": "AGUARDANDO",
+    "motor": "AGUARDANDO",
+    "sensor": "AGUARDANDO",
+    "status": "Aguardando leitura",
+    "modo": "AGUARDANDO",
+    "limite": LIMITE_UMIDADE
+}
 
 
-def ler_do_cache():
-    """Retorna a última leitura guardada no Redis, ou None."""
-    global redis_pausado_ate
+# Limpa os dados em caso de desconexão
+def desconectar():
 
-    if time.monotonic() < redis_pausado_ate:
-        return None
-
-    try:
-        valor = cache.get(CHAVE_CACHE)
-        return json.loads(valor) if valor else None
-    except redis.RedisError:
-        redis_pausado_ate = time.monotonic() + 10
-        return None  # Redis fora do ar: segue sem cache
-
-
-def gravar_no_cache(dados):
-    global redis_pausado_ate
-
-    if time.monotonic() < redis_pausado_ate:
-        return
-
-    try:
-        cache.set(CHAVE_CACHE, json.dumps(dados), ex=TEMPO_CACHE)
-    except redis.RedisError:
-        redis_pausado_ate = time.monotonic() + 10
+    with lock:
+        dados.update({
+            "umidade": None,
+            "presenca": "DESCONHECIDO",
+            "led": "DESCONHECIDO",
+            "motor": "DESCONHECIDO",
+            "sensor": "DESCONHECIDO",
+            "modo": "DESCONHECIDO",
+            "status": "Desconectado"
+        })
 
 
-@app.get("/")
-def inicio(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+# Comunicação com o Arduino
+def ler_arduino():
+
+    global arduino
+
+    while True:
+
+        try:
+
+            with serial.Serial(
+                PORTA,
+                BAUDRATE,
+                timeout=2,
+                write_timeout=2
+            ) as conexao:
+
+                time.sleep(2)
+
+                with lock_serial:
+                    arduino = conexao
+
+                print("Arduino conectado!")
+
+                ultima_mensagem = time.monotonic()
+
+                while True:
+
+                    mensagem = conexao.readline().decode(
+                        "utf-8",
+                        errors="ignore"
+                    ).strip()
+
+                    if not mensagem:
+
+                        if time.monotonic() - ultima_mensagem > 6:
+                            raise ConnectionError(
+                                "Arduino sem resposta"
+                            )
+
+                        continue
+
+                    ultima_mensagem = time.monotonic()
+
+                    if mensagem.startswith("Umidade:"):
+
+                        try:
+
+                            valor = mensagem.split(":", 1)[1]
+
+                            umidade = float(
+                                valor.replace("%", "").strip()
+                            )
+
+                            if not 0 <= umidade <= 100:
+                                continue
+
+                        except ValueError:
+                            continue
+
+                        with lock:
+
+                            dados["umidade"] = umidade
+                            dados["status"] = "Conectado"
+                            dados["sensor"] = "OK"
+
+                        try:
+                            salvar_leitura(umidade)
+
+                        except Exception as erro:
+                            print("Erro no banco:", erro)
+
+                        print(f"Umidade: {umidade}%")
+
+                    elif mensagem.startswith("Presenca:"):
+
+                        with lock:
+
+                            dados["presenca"] = mensagem.split(
+                                ":", 1
+                            )[1].strip()
+
+                            dados["status"] = "Conectado"
+
+                    elif mensagem.startswith("LED:"):
+
+                        with lock:
+
+                            dados["led"] = mensagem.split(
+                                ":", 1
+                            )[1].strip()
+
+                    elif mensagem.startswith("Motor:"):
+
+                        with lock:
+
+                            dados["motor"] = mensagem.split(
+                                ":", 1
+                            )[1].strip()
+
+                    elif mensagem.startswith("Sensor:"):
+
+                        with lock:
+
+                            dados["sensor"] = mensagem.split(
+                                ":", 1
+                            )[1].strip()
+
+                            if dados["sensor"] == "ERRO":
+                                dados["umidade"] = None
+
+                    elif mensagem.startswith("Modo:"):
+
+                        with lock:
+
+                            dados["modo"] = mensagem.split(
+                                ":", 1
+                            )[1].strip()
+
+                    elif mensagem == "Erro no DHT11!":
+
+                        with lock:
+
+                            dados["sensor"] = "ERRO"
+                            dados["umidade"] = None
+
+        except Exception as erro:
+
+            with lock_serial:
+                arduino = None
+
+            desconectar()
+
+            print("Erro na comunicacao:", erro)
+            print("Tentando reconectar...")
+
+            time.sleep(5)
 
 
-@app.get("/temperatura")
-def temperatura():
-    # 1) Tenta o cache (evita ler o Arduino e gravar duplicado no banco)
-    em_cache = ler_do_cache()
-    if em_cache:
-        em_cache["cache"] = True
-        return em_cache
+# Página principal
+@app.route("/")
+def index():
 
-    # 2) Cache vazio: lê o sensor, com trava de concorrência
-    with trava_sensor:
-        # Outra requisição pode ter preenchido o cache enquanto esperávamos
-        em_cache = ler_do_cache()
-        if em_cache:
-            em_cache["cache"] = True
-            return em_cache
-
-        dados = ler_temperatura()
-        valor = dados["temperatura"]
-        status = dados["status"]
-
-        resposta = {
-            "temperatura": valor,
-            "unidade": "°C",
-            "status": status,
-            "cache": False,
-        }
-
-        # Registra e guarda em cache somente leituras válidas
-        if valor is not None and status in ("real", "simulado"):
-            salvar_leitura(valor, status)
-            gravar_no_cache(resposta)
-
-    return resposta
+    return render_template("index.html")
 
 
-@app.get("/historico")
+# Dados atuais
+@app.route("/dados")
+def obter_dados():
+
+    with lock:
+        return jsonify(dados.copy())
+
+
+# Histórico de umidade
+@app.route("/historico")
 def historico():
-    registros = obter_historico(100)
 
-    return {
-        "total": len(registros),
-        "leituras": registros
-    }
+    return jsonify(obter_historico())
 
 
-@app.get("/historico/csv")
-def exportar_csv():
-    registros = obter_todas_leituras()
+# Alteração do modo de presença
+@app.route("/presenca", methods=["POST"])
+def alterar_presenca():
 
-    arquivo = io.StringIO(newline="")
-    escritor = csv.writer(arquivo, delimiter=";")
+    conteudo = request.get_json(silent=True)
 
-    escritor.writerow([
-        "ID",
-        "Temperatura",
-        "Unidade",
-        "Origem dos dados",
-        "Data e hora"
-    ])
+    if not isinstance(conteudo, dict):
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Dados invalidos"
+        }), 400
 
-    for registro in registros:
-        escritor.writerow([
-            registro["id"],
-            registro["temperatura"],
-            registro["unidade"],
-            registro["status"],
-            registro["data_hora"]
-        ])
+    modo = conteudo.get("modo")
 
-    return Response(
-        content=arquivo.getvalue().encode("utf-8-sig"),
-        media_type="text/csv; charset=utf-8",
-        headers={
-            "Content-Disposition": "attachment; filename=historico_temperaturas.csv"
-        },
-    )
+    if modo not in ["AUTO", "TRUE", "FALSE"]:
+
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Modo invalido"
+        }), 400
+
+    try:
+
+        with lock_serial:
+
+            if arduino is None or not arduino.is_open:
+
+                return jsonify({
+                    "sucesso": False,
+                    "mensagem": "Arduino desconectado"
+                }), 503
+
+            arduino.write(
+                (modo + "\n").encode("utf-8")
+            )
+
+            arduino.flush()
+
+        print("Comando enviado:", modo)
+
+        return jsonify({
+            "sucesso": True,
+            "mensagem": "Comando enviado",
+            "modo_solicitado": modo
+        })
+
+    except Exception as erro:
+
+        return jsonify({
+            "sucesso": False,
+            "mensagem": str(erro)
+        }), 503
 
 
+# Inicialização do sistema
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=5000, reload=True)
+
+    inicializar_banco()
+
+    threading.Thread(
+        target=ler_arduino,
+        daemon=True
+    ).start()
+
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=False
+    )

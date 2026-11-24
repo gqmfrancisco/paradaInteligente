@@ -1,63 +1,47 @@
-
 import sqlite3
-from pathlib import Path
 from datetime import datetime
 
-CAMINHO_BANCO = Path(__file__).resolve().parent / "historico.db"
+BANCO = "historico.db"
 
 
-def conectar():
-    return sqlite3.connect(CAMINHO_BANCO, timeout=10)
-
-
+# Cria a tabela de umidade
 def inicializar_banco():
-    with conectar() as conexao:
+    with sqlite3.connect(BANCO) as conexao:
         conexao.execute("""
-            CREATE TABLE IF NOT EXISTS leituras (
+            CREATE TABLE IF NOT EXISTS leituras_umidade (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                temperatura REAL NOT NULL,
-                unidade TEXT NOT NULL,
-                status TEXT NOT NULL,
+                umidade REAL NOT NULL,
                 data_hora TEXT NOT NULL
             )
         """)
 
 
-def salvar_leitura(temperatura, status):
-    data_hora = datetime.now().astimezone().isoformat(
-        timespec="seconds"
-    )
-
-    with conectar() as conexao:
+# Salva uma leitura no banco
+def salvar_leitura(umidade):
+    with sqlite3.connect(BANCO) as conexao:
         conexao.execute("""
-            INSERT INTO leituras
-            (temperatura, unidade, status, data_hora)
-            VALUES (?, ?, ?, ?)
-        """, (temperatura, "°C", status, data_hora))
+            INSERT INTO leituras_umidade (umidade, data_hora)
+            VALUES (?, ?)
+        """, (
+            umidade,
+            datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        ))
 
 
-def obter_historico(limite=100):
-    with conectar() as conexao:
+# Retorna as últimas 50 leituras
+def obter_historico():
+    with sqlite3.connect(BANCO) as conexao:
         conexao.row_factory = sqlite3.Row
 
         registros = conexao.execute("""
-            SELECT id, temperatura, unidade, status, data_hora
-            FROM leituras
+            SELECT * FROM leituras_umidade
             ORDER BY id DESC
-            LIMIT ?
-        """, (limite,)).fetchall()
-
-    return [dict(registro) for registro in reversed(registros)]
-
-
-def obter_todas_leituras():
-    with conectar() as conexao:
-        conexao.row_factory = sqlite3.Row
-
-        registros = conexao.execute("""
-            SELECT id, temperatura, unidade, status, data_hora
-            FROM leituras
-            ORDER BY id ASC
+            LIMIT 50
         """).fetchall()
 
-    return [dict(registro) for registro in registros]
+        return [dict(registro) for registro in registros]
+
+
+if __name__ == "__main__":
+    inicializar_banco()
+    print("Banco de dados inicializado!")

@@ -1,247 +1,916 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoramento de Umidade</title>
 
-    <title>Furação 2000 | Monitoramento</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
-    <script src="{{ url_for('static', path='script.js') }}" defer></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: white;
+        }
+
+        header {
+            background: #1e293b;
+            padding: 25px;
+            text-align: center;
+            border-bottom: 1px solid #334155;
+        }
+
+        header h1 {
+            margin: 0;
+            color: #38bdf8;
+        }
+
+        header p {
+            color: #94a3b8;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            border: 1px solid #334155;
+        }
+
+        .card h2 {
+            font-size: 18px;
+            color: #94a3b8;
+        }
+
+        .valor {
+            font-size: 60px;
+            font-weight: bold;
+            color: #38bdf8;
+            margin: 20px 0;
+        }
+
+        .status {
+            font-size: 23px;
+            font-weight: bold;
+            margin: 25px 0;
+        }
+
+        .barra {
+            height: 15px;
+            background: #334155;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .progresso {
+            height: 100%;
+            width: 0%;
+            background: #38bdf8;
+            transition: width 0.5s;
+        }
+
+        .informacoes {
+            background: #1e293b;
+            padding: 25px;
+            margin-top: 25px;
+            border-radius: 15px;
+            border: 1px solid #334155;
+        }
+
+        .informacoes p {
+            color: #cbd5e1;
+        }
+
+        .controle {
+            text-align: center;
+            margin-top: 0;
+            margin-bottom: 25px;
+        }
+
+        .botoes {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 25px 0;
+        }
+
+        button {
+            border: 2px solid transparent;
+            border-radius: 10px;
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        button:hover {
+            filter: brightness(1.2);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button.selecionado {
+            border-color: white;
+            box-shadow: 0 0 12px #ffffff40;
+        }
+
+        .auto {
+            background: #0284c7;
+        }
+
+        .true {
+            background: #16a34a;
+        }
+
+        .false {
+            background: #dc2626;
+        }
+
+        .estados {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .estado {
+            background: #0f172a;
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .estado strong {
+            font-size: 22px;
+        }
+
+        .motor-icone {
+            font-size: 40px;
+            color: #64748b;
+        }
+
+        .motor-ativo {
+            color: #22c55e;
+            animation: girar 1s linear infinite;
+        }
+
+        @keyframes girar {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .estatisticas {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .estatistica {
+            background: #0f172a;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .estatistica strong {
+            font-size: 28px;
+            color: #38bdf8;
+        }
+
+        .grafico-container {
+            position: relative;
+            height: 300px;
+        }
+
+        footer {
+            text-align: center;
+            color: #64748b;
+            padding: 25px;
+        }
+    </style>
 </head>
 
 <body>
 
-<div class="layout">
+    <header>
+        <h1>Sistema de Monitoramento de Umidade</h1>
+        <p>Conforto ambiental e resiliência climática</p>
+    </header>
 
-    <!-- BARRA LATERAL -->
-    <aside class="sidebar">
+    <div class="container">
 
-        <div class="sidebar-brand">
-            <img
-                src="{{ url_for('static', path='logo-furacao-2000.png') }}"
-                alt="Logo Furação 2000"
-                class="brand-logo"
-            >
-        </div>
+        <!-- Controle manual de presença -->
 
-        <nav class="nav">
-            <a href="#painel" class="nav-item active">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>
-                Painel
-            <a href="/historico/csv" class="nav-item">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>
-                Exportar CSV
-            </a>
-        </nav>
+        <div class="informacoes controle">
 
-        <div class="sidebar-footer">
-            <span>Raspberry Pi · Arduino</span>
-            <span>FastAPI · Redis · SQLite</span>
-            <span>Furação 2000 © 2026</span>
-        </div>
+            <h2>Controle de presença</h2>
 
-    </aside>
+            <p>Selecione o modo de funcionamento do sistema.</p>
 
-    <!-- CONTEÚDO -->
-    <div class="content">
+            <div class="botoes">
 
-        <header class="topbar" id="painel">
+                <button class="auto"
+                        id="btnAUTO"
+                        onclick="alterarModo('AUTO')">
+                    AUTOMÁTICO (PIR)
+                </button>
 
-            <div>
-                <h1>Painel</h1>
-                <span class="topbar-sub">Monitoramento de temperatura em tempo real</span>
-            </div>
+                <button class="true"
+                        id="btnTRUE"
+                        onclick="alterarModo('TRUE')">
+                    TRUE - COM PRESENÇA
+                </button>
 
-            <div class="topbar-right">
-
-                <div class="connection">
-                    <span class="connection-dot" id="connection-dot"></span>
-                    <span id="connection-text">Conectando...</span>
-                </div>
-
-                <div class="updated">
-                    <span>Última atualização</span>
-                    <strong id="last-update">--:--:--</strong>
-                </div>
+                <button class="false"
+                        id="btnFALSE"
+                        onclick="alterarModo('FALSE')">
+                    FALSE - SEM PRESENÇA
+                </button>
 
             </div>
 
-        </header>
+            <p id="mensagemComando">
+                Aguardando comunicação com o Arduino...
+            </p>
 
-        <main>
+            <div class="estados">
 
-            <!-- INDICADORES -->
-            <section class="stat-grid">
-
-                <!-- TEMPERATURA ATUAL -->
-                <article class="card stat-card">
-
-                    <div class="stat-head">
-                        <span class="card-label">Temperatura atual</span>
-                        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/></svg>
-                    </div>
-
-                    <div class="stat-value">
-                        <span class="stat-number" id="temperature">--</span>
-                        <span class="unit">°C</span>
-                    </div>
-
-                    <div class="stat-row">
-                        <span class="temperature-status" id="temperature-status">Aguardando leitura...</span>
-                    </div>
-
-                    <div class="meter">
-                        <div class="meter-bar"><div class="meter-fill" id="temperature-fill"></div></div>
-                        <div class="bar-labels"><span>0 °C</span><span>50 °C</span></div>
-                    </div>
-
-                </article>
-
-                <!-- TEMPERATURA MÁXIMA -->
-                <article class="card stat-card">
-
-                    <div class="stat-head">
-                        <span class="card-label">Temperatura máxima</span>
-                        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg>
-                    </div>
-
-                    <div class="stat-value">
-                        <span class="stat-number" id="max-temperature">--</span>
-                        <span class="unit">°C</span>
-                    </div>
-
-                    <div class="stat-row">
-                        <span class="stat-note">Maior leitura desta sessão</span>
-                    </div>
-
-                    <div class="meter">
-                        <div class="meter-bar"><div class="meter-fill" id="max-fill"></div></div>
-                        <div class="bar-labels"><span>0 °C</span><span>50 °C</span></div>
-                    </div>
-
-                </article>
-
-                <!-- TEMPERATURA MÍNIMA -->
-                <article class="card stat-card">
-
-                    <div class="stat-head">
-                        <span class="card-label">Temperatura mínima</span>
-                        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 9v8H9"/></svg>
-                    </div>
-
-                    <div class="stat-value">
-                        <span class="stat-number" id="min-temperature">--</span>
-                        <span class="unit">°C</span>
-                    </div>
-
-                    <div class="stat-row">
-                        <span class="stat-note">Menor leitura desta sessão</span>
-                    </div>
-
-                    <div class="meter">
-                        <div class="meter-bar"><div class="meter-fill" id="min-fill"></div></div>
-                        <div class="bar-labels"><span>0 °C</span><span>50 °C</span></div>
-                    </div>
-
-                </article>
-
-            </section>
-
-            <!-- GRÁFICO + SISTEMA -->
-            <section class="middle-grid" id="grafico">
-
-                <article class="card chart-card">
-
-                    <div class="card-title-row">
-                        <h3>Histórico de temperatura</h3>
-                        <span class="live-label"><span></span> Ao vivo</span>
-                    </div>
-
-                    <div class="chart-container">
-                        <canvas id="temperature-chart"></canvas>
-                    </div>
-
-                    <p class="chart-note">
-                        O gráfico apresenta as últimas 20 leituras. Passe o mouse sobre a linha para ver o valor e a hora.
-                    </p>
-
-                </article>
-
-                <article class="card system-card">
-
-                    <h3>Sistema</h3>
-
-                    <ul class="system-list">
-
-                        <li>
-                            <svg class="row-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12a7 7 0 0 1 14 0M8.5 12a3.5 3.5 0 0 1 7 0M12 12v.01M12 16v4"/></svg>
-                            <div>
-                                <span class="card-label">Fonte dos dados</span>
-                                <strong id="sensor-source">Aguardando sensor</strong>
-                                <p id="sensor-description">Verificando comunicação com o Arduino.</p>
-                            </div>
-                        </li>
-
-                        <li>
-                            <svg class="row-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-                            <div>
-                                <span class="card-label">Intervalo de leitura</span>
-                                <strong>3 segundos</strong>
-                                <p>Atualização automática dos dados.</p>
-                            </div>
-                        </li>
-
-                        <li>
-                            <svg class="row-icon" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>
-                            <div>
-                                <span class="card-label">Cache Redis</span>
-                                <strong id="cache-source">Aguardando leitura</strong>
-                                <p id="cache-description">Verificando o cache distribuído.</p>
-                            </div>
-                        </li>
-
-                    </ul>
-
-                </article>
-
-            </section>
-
-            <!-- TABELA -->
-            <section class="card table-card" id="leituras">
-
-                <div class="card-title-row">
-                    <h3>Últimas leituras</h3>
-                    <a href="/historico/csv" class="export-button">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>
-                        Exportar CSV
-                    </a>
+                <div class="estado">
+                    <p>Modo atual</p>
+                    <strong id="modo">--</strong>
                 </div>
 
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Data e hora</th>
-                                <th>Origem</th>
-                                <th class="num">Temperatura</th>
-                            </tr>
-                        </thead>
-                        <tbody id="readings-body">
-                            <tr><td colspan="4" class="empty">Aguardando leituras...</td></tr>
-                        </tbody>
-                    </table>
+                <div class="estado">
+                    <p>Presença</p>
+                    <strong id="presenca">--</strong>
                 </div>
 
-            </section>
+                <div class="estado">
+                    <p>Estado do LED</p>
+                    <strong id="led">--</strong>
+                </div>
 
-        </main>
+            </div>
+
+        </div>
+
+        <!-- Monitoramento -->
+
+        <div class="cards">
+
+            <div class="card">
+                <h2>Umidade do ambiente</h2>
+
+                <div class="valor" id="umidade">--%</div>
+
+                <div class="barra">
+                    <div class="progresso" id="barra"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Conexão com Arduino</h2>
+
+                <div class="status" id="conexao">
+                    Aguardando...
+                </div>
+
+                <p>Comunicação Serial USB</p>
+            </div>
+
+            <div class="card">
+                <h2>Condição do ambiente</h2>
+
+                <div class="status" id="alerta">
+                    Aguardando...
+                </div>
+
+                <p>Limite de acionamento: 58%</p>
+            </div>
+
+            <div class="card">
+                <h2>Servo motor</h2>
+
+                <div class="motor-icone" id="iconeMotor">
+                    ⚙
+                </div>
+
+                <div class="status" id="motor">
+                    Aguardando...
+                </div>
+
+                <p id="cicloMotor">
+                    Aguardando informações
+                </p>
+            </div>
+
+        </div>
+
+        <!-- Histórico -->
+
+        <div class="informacoes">
+
+            <h2>Histórico de umidade</h2>
+
+            <p>Últimas 50 leituras registradas no banco de dados.</p>
+
+            <div class="estatisticas">
+
+                <div class="estatistica">
+                    <p>Umidade mínima</p>
+                    <strong id="minima">--%</strong>
+                </div>
+
+                <div class="estatistica">
+                    <p>Umidade média</p>
+                    <strong id="media">--%</strong>
+                </div>
+
+                <div class="estatistica">
+                    <p>Umidade máxima</p>
+                    <strong id="maxima">--%</strong>
+                </div>
+
+            </div>
+
+            <div class="grafico-container">
+                <canvas id="graficoUmidade"></canvas>
+            </div>
+
+            <p id="statusHistorico"></p>
+
+        </div>
+
+        <!-- Informações -->
+
+        <div class="informacoes">
+
+            <h2>Informações do sistema</h2>
+
+            <p>Hardware: Raspberry Pi + Arduino UNO</p>
+            <p>Sensores: DHT11 e PIR</p>
+            <p>Atuadores: LED e servo motor</p>
+            <p>Comunicação: Serial USB - 9600 baud</p>
+            <p>Backend: Python + Flask</p>
+            <p>Banco de dados: SQLite</p>
+            <p>Limite de acionamento: 58%</p>
+            <p>Intervalo do servo: 5 segundos</p>
+            <p>Última consulta: <span id="horario">--</span></p>
+
+        </div>
 
     </div>
 
-</div>
+    <footer>
+        Projeto Final - Hardware Architecture | ATITUS
+    </footer>
+
+    <script>
+
+        const verde = "#22c55e";
+        const vermelho = "#ef4444";
+        const amarelo = "#f59e0b";
+        const cinza = "#94a3b8";
+        const azul = "#38bdf8";
+
+        let conectado = false;
+        let enviando = false;
+        let modoPendente = null;
+        let prazoConfirmacao = 0;
+
+        function exibir(id, texto, cor) {
+
+            const elemento = document.getElementById(id);
+
+            elemento.innerText = texto;
+
+            if (cor) {
+                elemento.style.color = cor;
+            }
+        }
+
+        function atualizarBotoes(modo) {
+
+            ["AUTO", "TRUE", "FALSE"].forEach(item => {
+
+                const botao = document.getElementById("btn" + item);
+
+                botao.classList.toggle(
+                    "selecionado",
+                    item === modo
+                );
+
+                botao.disabled =
+                    !conectado || enviando || modoPendente !== null;
+            });
+        }
+
+        // Envia comandos para o Arduino
+
+        async function alterarModo(modo) {
+
+            if (!conectado || enviando || modoPendente !== null) {
+                return;
+            }
+
+            enviando = true;
+
+            atualizarBotoes("");
+
+            exibir(
+                "mensagemComando",
+                "Enviando comando: " + modo,
+                amarelo
+            );
+
+            try {
+
+                const resposta = await fetch("/presenca", {
+
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        modo: modo
+                    })
+                });
+
+                const resultado = await resposta.json();
+
+                if (!resposta.ok || !resultado.sucesso) {
+
+                    throw new Error(
+                        resultado.mensagem || "Falha no comando"
+                    );
+                }
+
+                modoPendente = modo;
+                prazoConfirmacao = Date.now() + 5000;
+
+                exibir(
+                    "mensagemComando",
+                    "Comando enviado. Aguardando confirmação...",
+                    amarelo
+                );
+
+            } catch (erro) {
+
+                exibir(
+                    "mensagemComando",
+                    "Erro: " + erro.message,
+                    vermelho
+                );
+
+            } finally {
+
+                enviando = false;
+                atualizarBotoes("");
+            }
+        }
+
+        // Limpa informações quando desconectado
+
+        function limparDados() {
+
+            conectado = false;
+            modoPendente = null;
+
+            exibir("umidade", "--%", azul);
+            exibir("alerta", "Sem leitura", cinza);
+            exibir("motor", "SEM COMUNICAÇÃO", vermelho);
+            exibir("modo", "--", cinza);
+            exibir("presenca", "--", cinza);
+            exibir("led", "--", cinza);
+            exibir("cicloMotor", "Estado indisponível");
+
+            exibir(
+                "mensagemComando",
+                "Arduino indisponível",
+                vermelho
+            );
+
+            document.getElementById("barra").style.width = "0%";
+
+            document.getElementById("iconeMotor")
+                .classList.remove("motor-ativo");
+
+            atualizarBotoes("");
+        }
+
+        // Consulta os dados do Arduino
+
+        async function atualizarDados() {
+
+            try {
+
+                const resposta = await fetch("/dados", {
+                    cache: "no-store"
+                });
+
+                if (!resposta.ok) {
+                    throw new Error("Falha na API");
+                }
+
+                const dados = await resposta.json();
+
+                conectado = dados.status === "Conectado";
+
+                exibir(
+                    "conexao",
+                    dados.status,
+                    conectado ? verde : vermelho
+                );
+
+                if (!conectado) {
+
+                    limparDados();
+
+                    return;
+                }
+
+                // Confirma o modo recebido do Arduino
+
+                const modo = dados.modo;
+
+                if (modo === "AUTO") {
+                    exibir("modo", "AUTOMÁTICO", azul);
+                } else if (modo === "TRUE") {
+                    exibir("modo", "TRUE - MANUAL", verde);
+                } else if (modo === "FALSE") {
+                    exibir("modo", "FALSE - MANUAL", vermelho);
+                } else {
+                    exibir("modo", "AGUARDANDO", amarelo);
+                }
+
+                if (modoPendente !== null) {
+
+                    if (modo === modoPendente) {
+
+                        exibir(
+                            "mensagemComando",
+                            "Modo confirmado pelo Arduino: " + modo,
+                            verde
+                        );
+
+                        modoPendente = null;
+
+                    } else if (Date.now() > prazoConfirmacao) {
+
+                        exibir(
+                            "mensagemComando",
+                            "Arduino não confirmou o comando.",
+                            vermelho
+                        );
+
+                        modoPendente = null;
+                    }
+
+                } else if (!enviando) {
+
+                    const mensagem =
+                        document.getElementById("mensagemComando");
+
+                    if (mensagem.innerText.startsWith("Aguardando") ||
+                        mensagem.innerText === "Arduino indisponível") {
+
+                        exibir(
+                            "mensagemComando",
+                            "Sistema conectado. Selecione um modo.",
+                            verde
+                        );
+                    }
+                }
+
+                atualizarBotoes(modo);
+
+                // Estado da presença
+
+                if (dados.presenca === "SIM") {
+
+                    exibir("presenca", "DETECTADA", verde);
+
+                } else if (dados.presenca === "NAO") {
+
+                    exibir("presenca", "SEM PRESENÇA", vermelho);
+
+                } else {
+
+                    exibir("presenca", "AGUARDANDO", cinza);
+                }
+
+                // Estado do LED
+
+                if (dados.led === "LIGADO") {
+
+                    exibir("led", "LIGADO", verde);
+
+                } else if (dados.led === "DESLIGADO") {
+
+                    exibir("led", "DESLIGADO", cinza);
+
+                } else {
+
+                    exibir("led", "AGUARDANDO", cinza);
+                }
+
+                // Umidade
+
+                if (typeof dados.umidade === "number") {
+
+                    const umidade = dados.umidade;
+
+                    exibir(
+                        "umidade",
+                        umidade.toFixed(1) + "%",
+                        azul
+                    );
+
+                    document.getElementById("barra").style.width =
+                        Math.max(0, Math.min(100, umidade)) + "%";
+
+                    if (umidade <= 58) {
+
+                        exibir(
+                            "alerta",
+                            "Abaixo ou no limite",
+                            amarelo
+                        );
+
+                    } else {
+
+                        exibir(
+                            "alerta",
+                            "Acima do limite",
+                            verde
+                        );
+                    }
+
+                } else {
+
+                    exibir("umidade", "--%", azul);
+                    exibir("alerta", "Sem leitura", vermelho);
+
+                    document.getElementById("barra").style.width =
+                        "0%";
+                }
+
+                // Estado do motor
+
+                const icone = document.getElementById("iconeMotor");
+
+                if (dados.motor === "ACIONADO") {
+
+                    exibir("motor", "ACIONADO", verde);
+
+                    icone.classList.add("motor-ativo");
+
+                } else if (dados.motor === "PARADO") {
+
+                    exibir("motor", "PARADO", cinza);
+
+                    icone.classList.remove("motor-ativo");
+
+                } else {
+
+                    exibir("motor", "AGUARDANDO", amarelo);
+
+                    icone.classList.remove("motor-ativo");
+                }
+
+                // Condições de acionamento
+
+                if (dados.sensor === "ERRO") {
+
+                    exibir("cicloMotor", "Falha no DHT11");
+
+                } else if (dados.presenca === "NAO") {
+
+                    exibir("cicloMotor", "Sem presença detectada");
+
+                } else if (dados.led === "LIGADO") {
+
+                    exibir(
+                        "cicloMotor",
+                        "Ciclo ativo: acionamento a cada 5 segundos"
+                    );
+
+                } else if (typeof dados.umidade === "number" &&
+                           dados.umidade > 58) {
+
+                    exibir("cicloMotor", "Umidade acima de 58%");
+
+                } else {
+
+                    exibir("cicloMotor", "Aguardando condições");
+                }
+
+                exibir(
+                    "horario",
+                    new Date().toLocaleTimeString("pt-BR")
+                );
+
+            } catch (erro) {
+
+                exibir(
+                    "conexao",
+                    "Servidor desconectado",
+                    vermelho
+                );
+
+                limparDados();
+            }
+        }
+
+        // Gráfico de histórico
+
+        let grafico = null;
+
+        if (typeof Chart !== "undefined") {
+
+            grafico = new Chart(
+                document.getElementById("graficoUmidade"),
+                {
+                    type: "line",
+
+                    data: {
+                        labels: [],
+
+                        datasets: [{
+                            label: "Umidade (%)",
+                            data: [],
+                            borderColor: "#38bdf8",
+                            backgroundColor: "rgba(56,189,248,0.15)",
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 2,
+                            borderWidth: 3
+                        }]
+                    },
+
+                    options: {
+
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+
+                        scales: {
+
+                            y: {
+                                min: 0,
+                                max: 100,
+
+                                ticks: {
+                                    color: cinza,
+                                    callback: valor => valor + "%"
+                                },
+
+                                grid: {
+                                    color: "#334155"
+                                }
+                            },
+
+                            x: {
+
+                                ticks: {
+                                    color: cinza,
+                                    maxTicksLimit: 10
+                                },
+
+                                grid: {
+                                    color: "#334155"
+                                }
+                            }
+                        },
+
+                        plugins: {
+
+                            legend: {
+
+                                labels: {
+                                    color: "#ffffff"
+                                }
+                            }
+                        }
+                    }
+                }
+            );
+        }
+
+        async function atualizarHistorico() {
+
+            try {
+
+                const resposta = await fetch("/historico", {
+                    cache: "no-store"
+                });
+
+                if (!resposta.ok) {
+                    throw new Error("Falha no histórico");
+                }
+
+                const registros = await resposta.json();
+
+                registros.reverse();
+
+                const valores = registros.map(
+                    item => item.umidade
+                );
+
+                const horarios = registros.map(
+                    item => item.data_hora.split(" ")[1]
+                );
+
+                if (grafico) {
+
+                    grafico.data.labels = horarios;
+                    grafico.data.datasets[0].data = valores;
+
+                    grafico.update();
+                }
+
+                if (valores.length > 0) {
+
+                    const minima = Math.min(...valores);
+                    const maxima = Math.max(...valores);
+
+                    const media = valores.reduce(
+                        (total, valor) => total + valor, 0
+                    ) / valores.length;
+
+                    exibir("minima", minima.toFixed(1) + "%");
+                    exibir("media", media.toFixed(1) + "%");
+                    exibir("maxima", maxima.toFixed(1) + "%");
+
+                } else {
+
+                    exibir("minima", "--%");
+                    exibir("media", "--%");
+                    exibir("maxima", "--%");
+                }
+
+                exibir(
+                    "statusHistorico",
+                    grafico
+                        ? "Registros carregados: " + valores.length
+                        : "Histórico disponível, mas o gráfico não carregou."
+                );
+
+            } catch (erro) {
+
+                exibir(
+                    "statusHistorico",
+                    "Erro ao consultar o histórico.",
+                    vermelho
+                );
+            }
+        }
+
+        async function monitorar() {
+
+            await atualizarDados();
+
+            setTimeout(monitorar, 200);
+        }
+
+        atualizarBotoes("");
+        monitorar();
+
+        atualizarHistorico();
+        setInterval(atualizarHistorico, 2000);
+
+    </script>
 
 </body>
 </html>
