@@ -314,7 +314,7 @@
                     Aguardando...
                 </div>
 
-                <p>Limite de acionamento: 58%</p>
+                <p>Limite de acionamento: 75%</p>
             </div>
 
             <div class="card">
@@ -382,7 +382,7 @@
             <p>Comunicação: Serial USB - 9600 baud</p>
             <p>Backend: Python + Flask</p>
             <p>Banco de dados: SQLite</p>
-            <p>Limite de acionamento: 58%</p>
+            <p>Limite de acionamento: 75%</p>
             <p>Intervalo do servo: 5 segundos</p>
             <p>Última consulta: <span id="horario">--</span></p>
 
@@ -660,7 +660,7 @@
                     document.getElementById("barra").style.width =
                         Math.max(0, Math.min(100, umidade)) + "%";
 
-                    if (umidade <= 58) {
+                    if (umidade <= 75) {
 
                         exibir(
                             "alerta",
@@ -727,7 +727,7 @@
                     );
 
                 } else if (typeof dados.umidade === "number" &&
-                           dados.umidade > 58) {
+                           dados.umidade > 75) {
 
                     exibir("cicloMotor", "Umidade acima de 58%");
 

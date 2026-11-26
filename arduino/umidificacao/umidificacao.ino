@@ -1,4 +1,3 @@
-
 #include "DHT.h"
 #include <Servo.h>
 
@@ -8,7 +7,8 @@
 #define PINO_LED 8
 #define PINO_SERVO 9
 
-#define LIMITE_UMIDADE 58
+#define LIMITE_UMIDADE 75    // desliga o servo ACIMA deste valor
+#define LIMITE_RELIGA 73     // religa somente com este valor ou menos
 #define INTERVALO_SERVO 5000
 #define TEMPO_MOVIMENTO 500
 #define INTERVALO_DHT 2000
@@ -23,9 +23,9 @@ bool ledLigado = false;
 bool servoEmMovimento = false;
 bool primeiroAcionamento = true;
 bool leituraValida = false;
+bool umidadeAlta = false;
 
-// Modos de presença:
-// 0 = Automático (PIR)
+// 0 = Automatico (PIR)
 // 1 = TRUE
 // 2 = FALSE
 int modoPresenca = 0;
@@ -38,22 +38,22 @@ unsigned long inicioMovimento = 0;
 unsigned long ultimoEnvio = 0;
 
 void setup() {
+
   Serial.begin(9600);
 
   pinMode(PINO_PIR, INPUT);
   pinMode(PINO_LED, OUTPUT);
+  pinMode(PINO_SERVO, OUTPUT);
 
   digitalWrite(PINO_LED, LOW);
+  digitalWrite(PINO_SERVO, LOW);
 
   dht.begin();
-
-  motor.attach(PINO_SERVO);
-  motor.write(0);
 
   Serial.println("Sistema iniciado!");
 }
 
-// Recebe comandos enviados pela Raspberry
+// Recebe comandos da Raspberry
 void receberComandos() {
 
   while (Serial.available() > 0) {
@@ -93,7 +93,7 @@ void loop() {
 
   receberComandos();
 
-  // Define a presença conforme o modo escolhido
+  // Verifica a presenca
   if (modoPresenca == 0) {
     presenca = digitalRead(PINO_PIR) == HIGH;
   }
@@ -106,7 +106,12 @@ void loop() {
     presenca = false;
   }
 
-  // Leitura do DHT11
+  // LED depende exclusivamente da presenca
+  ledLigado = presenca;
+
+  digitalWrite(PINO_LED, presenca ? HIGH : LOW);
+
+  // Leitura da umidade
   if (agora - ultimaLeitura >= INTERVALO_DHT) {
 
     ultimaLeitura = agora;
@@ -124,22 +129,30 @@ void loop() {
       umidade = novaUmidade;
       leituraValida = true;
 
+      // Folga entre desligar e religar
+      if (umidade > LIMITE_UMIDADE) {
+        umidadeAlta = true;
+      } else if (umidade <= LIMITE_RELIGA) {
+        umidadeAlta = false;
+      }
+
       Serial.print("Umidade: ");
       Serial.print(umidade);
       Serial.println("%");
     }
   }
 
-  // Condição para acionamento
+  // Servo depende da umidade e da presenca
   bool condicaoAtiva =
     leituraValida &&
-    presenca &&
-    umidade <= LIMITE_UMIDADE;
+    !umidadeAlta &&
+    presenca;
 
   if (condicaoAtiva) {
 
-    digitalWrite(PINO_LED, HIGH);
-    ledLigado = true;
+    if (!motor.attached()) {
+      motor.attach(PINO_SERVO);
+    }
 
     // Aciona o servo a cada 5 segundos
     if (!servoEmMovimento &&
@@ -155,26 +168,45 @@ void loop() {
       primeiroAcionamento = false;
     }
 
-    // Retorna o servo após 500 milissegundos
+    // Retorna o servo apos 500 ms
     if (servoEmMovimento &&
         agora - inicioMovimento >= TEMPO_MOVIMENTO) {
 
       motor.write(0);
+
+      inicioMovimento = agora;   // marca o inicio do retorno
       servoEmMovimento = false;
     }
 
   } else {
 
-    digitalWrite(PINO_LED, LOW);
-    ledLigado = false;
+    // Desativa o servo quando:
+    // Umidade > 75% (religa com 73% ou menos)
+    // Sem presenca
+    // Erro no sensor
 
-    motor.write(0);
+    if (motor.attached()) {
 
-    servoEmMovimento = false;
+      if (servoEmMovimento) {
+
+        // Manda voltar para 0 antes de desligar
+        motor.write(0);
+
+        inicioMovimento = agora;
+        servoEmMovimento = false;
+      }
+
+      else if (agora - inicioMovimento >= TEMPO_MOVIMENTO) {
+
+        motor.detach();
+        digitalWrite(PINO_SERVO, LOW);
+      }
+    }
+
     primeiroAcionamento = true;
   }
 
-  // Envia informações para a Raspberry
+  // Envia informacoes para a Raspberry
   if (agora - ultimoEnvio >= 250) {
 
     ultimoEnvio = agora;

@@ -14,7 +14,7 @@ app = Flask(__name__)
 
 PORTA = "/dev/ttyACM0"
 BAUDRATE = 9600
-LIMITE_UMIDADE = 58
+LIMITE_UMIDADE = 75
 
 arduino = None
 
